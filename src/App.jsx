@@ -6,6 +6,9 @@ import SignIn from './pages/SignIn'
 import TeacherHome from './pages/TeacherHome'
 import ClassRoster from './pages/ClassRoster'
 import Attendance from './pages/Attendance'
+import QuizEditor from './pages/QuizEditor'
+import QuizResults from './pages/QuizResults'
+import QuizTake from './pages/QuizTake'
 import StudentHome from './pages/StudentHome'
 
 // Index route: send a logged-in user to their role's home, else to sign in.
@@ -49,10 +52,42 @@ export default function App() {
         }
       />
       <Route
+        path="/class/:classId/quizzes/new"
+        element={
+          <RequireAuth role="teacher">
+            <QuizEditor />
+          </RequireAuth>
+        }
+      />
+      <Route
+        path="/quiz/:quizId/edit"
+        element={
+          <RequireAuth role="teacher">
+            <QuizEditor />
+          </RequireAuth>
+        }
+      />
+      <Route
+        path="/quiz/:quizId/results"
+        element={
+          <RequireAuth role="teacher">
+            <QuizResults />
+          </RequireAuth>
+        }
+      />
+      <Route
         path="/student"
         element={
           <RequireAuth role="student">
             <StudentHome />
+          </RequireAuth>
+        }
+      />
+      <Route
+        path="/quiz/:quizId/take"
+        element={
+          <RequireAuth role="student">
+            <QuizTake />
           </RequireAuth>
         }
       />

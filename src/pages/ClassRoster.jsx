@@ -3,8 +3,11 @@ import { Link, useNavigate, useParams } from 'react-router-dom'
 import {
   getAttendanceSummary,
   getRoster,
+  listClassQuizzes,
   listMyClasses,
+  publishQuiz,
   removeStudent,
+  unpublishQuiz,
 } from '../lib/db'
 
 export default function ClassRoster() {
@@ -14,6 +17,7 @@ export default function ClassRoster() {
   const [cls, setCls] = useState(null)
   const [roster, setRoster] = useState([])
   const [summary, setSummary] = useState({})
+  const [quizzes, setQuizzes] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
   const [removingId, setRemovingId] = useState(null)
@@ -21,19 +25,35 @@ export default function ClassRoster() {
   async function refresh() {
     try {
       // listMyClasses is RLS-scoped to this teacher; find the one we're viewing.
-      const [classes, students, attendance] = await Promise.all([
+      const [classes, students, attendance, classQuizzes] = await Promise.all([
         listMyClasses(),
         getRoster(classId),
         getAttendanceSummary(classId),
+        listClassQuizzes(classId),
       ])
       setCls(classes.find((c) => c.id === classId) ?? null)
       setRoster(students)
       setSummary(attendance)
+      setQuizzes(classQuizzes)
       setError(null)
     } catch (err) {
       setError(err.message)
     } finally {
       setLoading(false)
+    }
+  }
+
+  async function togglePublish(quiz) {
+    setError(null)
+    try {
+      if (quiz.status === 'published') {
+        await unpublishQuiz(quiz.id)
+      } else {
+        await publishQuiz(quiz.id)
+      }
+      await refresh()
+    } catch (err) {
+      setError(err.message)
     }
   }
 
@@ -127,6 +147,62 @@ export default function ClassRoster() {
                     </li>
                   )
                 })}
+              </ul>
+            )}
+          </section>
+
+          <section className="panel">
+            <div className="question-head">
+              <h2>Quizzes</h2>
+              <button
+                type="button"
+                onClick={() => navigate(`/class/${classId}/quizzes/new`)}
+              >
+                New quiz
+              </button>
+            </div>
+            {quizzes.length === 0 && (
+              <p className="muted">No quizzes yet.</p>
+            )}
+            {quizzes.length > 0 && (
+              <ul className="list">
+                {quizzes.map((q) => (
+                  <li key={q.id} className="list-item">
+                    <div>
+                      <span className="item-title">{q.title}</span>
+                      <p className="muted">
+                        <span className={`badge badge-${q.status}`}>
+                          {q.status}
+                        </span>{' '}
+                        · {q.questionCount} question
+                        {q.questionCount === 1 ? '' : 's'}
+                      </p>
+                    </div>
+                    <div className="row-actions">
+                      <button
+                        type="button"
+                        className="ghost"
+                        onClick={() => navigate(`/quiz/${q.id}/edit`)}
+                      >
+                        Edit
+                      </button>
+                      <button
+                        type="button"
+                        className="ghost"
+                        onClick={() => togglePublish(q)}
+                      >
+                        {q.status === 'published' ? 'Unpublish' : 'Publish'}
+                      </button>
+                      <button
+                        type="button"
+                        className="ghost"
+                        onClick={() => navigate(`/quiz/${q.id}/results`)}
+                      >
+                        View results
+                      </button>
+                    </div>
+                  </li>
+                ))}
               </ul>
             )}
           </section>

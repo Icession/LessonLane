@@ -1,16 +1,20 @@
 import { useEffect, useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import {
   getAttendanceSummary,
   joinClassByCode,
+  listAvailableQuizzes,
   listMyEnrollments,
 } from '../lib/db'
 
 export default function StudentHome() {
   const { profile, signOut } = useAuth()
+  const navigate = useNavigate()
 
   const [enrollments, setEnrollments] = useState([])
   const [summaries, setSummaries] = useState({}) // classId -> my summary
+  const [quizzes, setQuizzes] = useState({}) // classId -> available quizzes
   const [loading, setLoading] = useState(true)
   const [loadError, setLoadError] = useState(null)
 
@@ -25,15 +29,22 @@ export default function StudentHome() {
 
       // RLS scopes getAttendanceSummary to my own records, so the only
       // entry returned is mine.
-      const entries = await Promise.all(
-        data
-          .filter((e) => e.class?.id)
-          .map(async (e) => {
-            const summary = await getAttendanceSummary(e.class.id)
-            return [e.class.id, summary[profile?.id] ?? null]
-          }),
+      const withClass = data.filter((e) => e.class?.id)
+      const summaryEntries = await Promise.all(
+        withClass.map(async (e) => {
+          const summary = await getAttendanceSummary(e.class.id)
+          return [e.class.id, summary[profile?.id] ?? null]
+        }),
       )
-      setSummaries(Object.fromEntries(entries))
+      setSummaries(Object.fromEntries(summaryEntries))
+
+      const quizEntries = await Promise.all(
+        withClass.map(async (e) => {
+          const available = await listAvailableQuizzes(e.class.id)
+          return [e.class.id, available]
+        }),
+      )
+      setQuizzes(Object.fromEntries(quizEntries))
       setLoadError(null)
     } catch (err) {
       setLoadError(err.message)
@@ -122,24 +133,56 @@ export default function StudentHome() {
           <ul className="list">
             {enrollments.map((e) => {
               const stats = e.class?.id ? summaries[e.class.id] : null
+              const classQuizzes = e.class?.id ? quizzes[e.class.id] ?? [] : []
               return (
-                <li key={e.id} className="list-item">
-                  <div>
-                    <span className="item-title">{e.class?.name}</span>
-                    <p className="muted">
-                      {[e.class?.subject, e.class?.grade_level]
-                        .filter(Boolean)
-                        .join(' · ') || '—'}
-                    </p>
-                    <p className="muted">
-                      {stats && stats.total > 0
-                        ? `Present ${stats.present} · Absent ${stats.absent} · Late ${stats.late}`
-                        : 'No attendance recorded yet'}
-                    </p>
+                <li key={e.id} className="class-card">
+                  <div className="class-card-head">
+                    <div>
+                      <span className="item-title">{e.class?.name}</span>
+                      <p className="muted">
+                        {[e.class?.subject, e.class?.grade_level]
+                          .filter(Boolean)
+                          .join(' · ') || '—'}
+                      </p>
+                      <p className="muted">
+                        {stats && stats.total > 0
+                          ? `Present ${stats.present} · Absent ${stats.absent} · Late ${stats.late}`
+                          : 'No attendance recorded yet'}
+                      </p>
+                    </div>
+                    <span className="muted">
+                      Joined {new Date(e.joined_at).toLocaleDateString()}
+                    </span>
                   </div>
-                  <span className="muted">
-                    Joined {new Date(e.joined_at).toLocaleDateString()}
-                  </span>
+
+                  <div className="quiz-block">
+                    <span className="muted">Quizzes</span>
+                    {classQuizzes.length === 0 && (
+                      <p className="muted">No quizzes available yet.</p>
+                    )}
+                    {classQuizzes.length > 0 && (
+                      <ul className="list">
+                        {classQuizzes.map((q) => (
+                          <li key={q.id} className="list-item">
+                            <span className="item-title">{q.title}</span>
+                            {q.attempted ? (
+                              <span className="muted">
+                                Scored {q.score}
+                              </span>
+                            ) : (
+                              <button
+                                type="button"
+                                className="ghost"
+                                onClick={() => navigate(`/quiz/${q.id}/take`)}
+                              >
+                                Take
+                              </button>
+                            )}
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                  </div>
                 </li>
               )
             })}

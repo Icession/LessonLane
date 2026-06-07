@@ -306,3 +306,111 @@ a.item-title:hover {
   color: #15803d;
   font-size: 0.9rem;
 }
+
+/* Quizzes */
+.notice {
+  background: var(--accent-bg);
+  border: 1px solid var(--accent-border);
+  color: var(--text);
+  border-radius: 6px;
+  padding: 0.5rem 0.75rem;
+  font-size: 0.9rem;
+}
+
+.badge {
+  display: inline-block;
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: capitalize;
+  padding: 0.1rem 0.5rem;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  color: var(--muted);
+}
+
+.badge-published {
+  background: #dcfce7;
+  border-color: #bbf7d0;
+  color: #15803d;
+}
+
+.badge-draft {
+  background: var(--code-bg);
+}
+
+.question-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.options-field {
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 0.6rem 0.75rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.options-field legend {
+  font-size: 0.85rem;
+  color: var(--muted);
+  padding: 0 0.25rem;
+}
+
+.option-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.option-row input[type='text'] {
+  flex: 1;
+}
+
+.score {
+  font-size: 1.4rem;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.mark {
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+
+.mark.right {
+  color: #15803d;
+}
+
+.mark.wrong {
+  color: var(--danger);
+}
+
+/* Student class cards (stacked: info + quizzes) */
+.class-card {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  padding: 0.75rem 1rem;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+
+.class-card-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.quiz-block {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  border-top: 1px solid var(--border);
+  padding-top: 0.6rem;
+}

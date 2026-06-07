@@ -172,3 +172,227 @@ export async function getAttendanceSummary(classId) {
   }
   return summary
 }
+
+// ---- Quizzes (teacher) ----
+
+// Create a new draft quiz owned by the current teacher.
+export async function createQuiz({ classId, title, topic }) {
+  const {
+    data: { user },
+  } = await supabase.auth.getUser()
+  if (!user) throw new Error('Not signed in')
+
+  const { data, error } = await supabase
+    .from('quizzes')
+    .insert({
+      class_id: classId,
+      created_by: user.id,
+      title,
+      topic,
+      status: 'draft',
+    })
+    .select()
+    .single()
+  if (error) throw error
+  return data
+}
+
+// Replace a quiz's questions wholesale. questions = [{ prompt, explanation,
+// options: [{ text, isCorrect }] }]. Deletes existing questions (options
+// cascade) then re-inserts with positions. Only safe on draft quizzes.
+export async function saveQuizQuestions(quizId, questions) {
+  const { error: deleteError } = await supabase
+    .from('quiz_questions')
+    .delete()
+    .eq('quiz_id', quizId)
+  if (deleteError) throw deleteError
+
+  for (let i = 0; i < questions.length; i++) {
+    const q = questions[i]
+    const { data: inserted, error: questionError } = await supabase
+      .from('quiz_questions')
+      .insert({
+        quiz_id: quizId,
+        position: i,
+        prompt: q.prompt,
+        explanation: q.explanation ?? null,
+      })
+      .select()
+      .single()
+    if (questionError) throw questionError
+
+    const optionRows = q.options.map((o, j) => ({
+      question_id: inserted.id,
+      position: j,
+      text: o.text,
+      is_correct: o.isCorrect,
+    }))
+    const { error: optionsError } = await supabase
+      .from('quiz_options')
+      .insert(optionRows)
+    if (optionsError) throw optionsError
+  }
+}
+
+export async function publishQuiz(quizId) {
+  const { error } = await supabase
+    .from('quizzes')
+    .update({ status: 'published' })
+    .eq('id', quizId)
+  if (error) throw error
+}
+
+export async function unpublishQuiz(quizId) {
+  const { error } = await supabase
+    .from('quizzes')
+    .update({ status: 'draft' })
+    .eq('id', quizId)
+  if (error) throw error
+}
+
+// List a class's quizzes with status and a question count.
+export async function listClassQuizzes(classId) {
+  const { data, error } = await supabase
+    .from('quizzes')
+    .select('id, title, topic, status, quiz_questions(count)')
+    .eq('class_id', classId)
+    .order('title', { ascending: true })
+  if (error) throw error
+  return data.map((q) => ({
+    id: q.id,
+    title: q.title,
+    topic: q.topic,
+    status: q.status,
+    questionCount: q.quiz_questions?.[0]?.count ?? 0,
+  }))
+}
+
+// Full quiz with questions + options (including is_correct), for the editor.
+export async function getQuizForEditing(quizId) {
+  const { data, error } = await supabase
+    .from('quizzes')
+    .select(
+      'id, class_id, title, topic, status, quiz_questions(id, position, prompt, explanation, quiz_options(id, position, text, is_correct))',
+    )
+    .eq('id', quizId)
+    .single()
+  if (error) throw error
+
+  const questions = (data.quiz_questions ?? [])
+    .slice()
+    .sort((a, b) => a.position - b.position)
+    .map((q) => ({
+      id: q.id,
+      prompt: q.prompt,
+      explanation: q.explanation,
+      options: (q.quiz_options ?? [])
+        .slice()
+        .sort((a, b) => a.position - b.position)
+        .map((o) => ({ id: o.id, text: o.text, isCorrect: o.is_correct })),
+    }))
+
+  return {
+    id: data.id,
+    classId: data.class_id,
+    title: data.title,
+    topic: data.topic,
+    status: data.status,
+    questions,
+  }
+}
+
+// Attempts for one quiz, newest first, with each student's name + score.
+export async function getQuizResults(quizId) {
+  const { data, error } = await supabase
+    .from('quiz_attempts')
+    .select('id, score, submitted_at, student:profiles(id, full_name)')
+    .eq('quiz_id', quizId)
+    .order('submitted_at', { ascending: false })
+  if (error) throw error
+  return data
+}
+
+// ---- Quizzes (student) ----
+
+// Published quizzes for a class, each flagged with whether I've attempted it.
+export async function listAvailableQuizzes(classId) {
+  const {
+    data: { user },
+  } = await supabase.auth.getUser()
+  if (!user) throw new Error('Not signed in')
+
+  const { data: quizzes, error } = await supabase
+    .from('quizzes')
+    .select('id, title, topic, status')
+    .eq('class_id', classId)
+    .eq('status', 'published')
+    .order('title', { ascending: true })
+  if (error) throw error
+
+  const ids = quizzes.map((q) => q.id)
+  let attempts = []
+  if (ids.length > 0) {
+    const { data, error: attemptsError } = await supabase
+      .from('quiz_attempts')
+      .select('quiz_id, score')
+      .eq('student_id', user.id)
+      .in('quiz_id', ids)
+    if (attemptsError) throw attemptsError
+    attempts = data
+  }
+
+  const byQuiz = {}
+  for (const a of attempts) byQuiz[a.quiz_id] = a
+  return quizzes.map((q) => ({
+    ...q,
+    attempted: Boolean(byQuiz[q.id]),
+    score: byQuiz[q.id]?.score ?? null,
+  }))
+}
+
+// Student-safe quiz payload (no correct answers) via RPC.
+export async function getQuizForStudent(quizId) {
+  const { data, error } = await supabase.rpc('get_quiz_for_student', {
+    p_quiz_id: quizId,
+  })
+  if (error) throw error
+  return data
+}
+
+// Submit answers via RPC. answers = [{ questionId, optionId }].
+export async function submitQuiz(quizId, answers) {
+  const payload = answers.map((a) => ({
+    question_id: a.questionId,
+    option_id: a.optionId,
+  }))
+  const { data, error } = await supabase.rpc('submit_quiz', {
+    p_quiz_id: quizId,
+    p_answers: payload,
+  })
+  if (error) throw error
+  return { score: data.score, total: data.total }
+}
+
+// The current student's own attempt + answers (is_correct per question).
+export async function getMyQuizResult(quizId) {
+  const {
+    data: { user },
+  } = await supabase.auth.getUser()
+  if (!user) throw new Error('Not signed in')
+
+  const { data: attempt, error } = await supabase
+    .from('quiz_attempts')
+    .select('id, score, submitted_at')
+    .eq('quiz_id', quizId)
+    .eq('student_id', user.id)
+    .maybeSingle()
+  if (error) throw error
+  if (!attempt) return { attempt: null, answers: [] }
+
+  const { data: answers, error: answersError } = await supabase
+    .from('quiz_answers')
+    .select('question_id, selected_option_id, is_correct')
+    .eq('attempt_id', attempt.id)
+  if (answersError) throw answersError
+  return { attempt, answers }
+}

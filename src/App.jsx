@@ -5,6 +5,7 @@ import SignUp from './pages/SignUp'
 import SignIn from './pages/SignIn'
 import TeacherHome from './pages/TeacherHome'
 import ClassRoster from './pages/ClassRoster'
+import Attendance from './pages/Attendance'
 import StudentHome from './pages/StudentHome'
 
 // Index route: send a logged-in user to their role's home, else to sign in.
@@ -36,6 +37,14 @@ export default function App() {
         element={
           <RequireAuth role="teacher">
             <ClassRoster />
+          </RequireAuth>
+        }
+      />
+      <Route
+        path="/class/:classId/attendance"
+        element={
+          <RequireAuth role="teacher">
+            <Attendance />
           </RequireAuth>
         }
       />

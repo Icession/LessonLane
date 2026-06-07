@@ -1,11 +1,16 @@
 import { useEffect, useState } from 'react'
 import { useAuth } from '../context/AuthContext'
-import { joinClassByCode, listMyEnrollments } from '../lib/db'
+import {
+  getAttendanceSummary,
+  joinClassByCode,
+  listMyEnrollments,
+} from '../lib/db'
 
 export default function StudentHome() {
   const { profile, signOut } = useAuth()
 
   const [enrollments, setEnrollments] = useState([])
+  const [summaries, setSummaries] = useState({}) // classId -> my summary
   const [loading, setLoading] = useState(true)
   const [loadError, setLoadError] = useState(null)
 
@@ -17,6 +22,18 @@ export default function StudentHome() {
     try {
       const data = await listMyEnrollments()
       setEnrollments(data)
+
+      // RLS scopes getAttendanceSummary to my own records, so the only
+      // entry returned is mine.
+      const entries = await Promise.all(
+        data
+          .filter((e) => e.class?.id)
+          .map(async (e) => {
+            const summary = await getAttendanceSummary(e.class.id)
+            return [e.class.id, summary[profile?.id] ?? null]
+          }),
+      )
+      setSummaries(Object.fromEntries(entries))
       setLoadError(null)
     } catch (err) {
       setLoadError(err.message)
@@ -29,6 +46,7 @@ export default function StudentHome() {
     void (async () => {
       await refresh()
     })()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   async function handleJoin(e) {
@@ -102,21 +120,29 @@ export default function StudentHome() {
         )}
         {!loading && enrollments.length > 0 && (
           <ul className="list">
-            {enrollments.map((e) => (
-              <li key={e.id} className="list-item">
-                <div>
-                  <span className="item-title">{e.class?.name}</span>
-                  <p className="muted">
-                    {[e.class?.subject, e.class?.grade_level]
-                      .filter(Boolean)
-                      .join(' · ') || '—'}
-                  </p>
-                </div>
-                <span className="muted">
-                  Joined {new Date(e.joined_at).toLocaleDateString()}
-                </span>
-              </li>
-            ))}
+            {enrollments.map((e) => {
+              const stats = e.class?.id ? summaries[e.class.id] : null
+              return (
+                <li key={e.id} className="list-item">
+                  <div>
+                    <span className="item-title">{e.class?.name}</span>
+                    <p className="muted">
+                      {[e.class?.subject, e.class?.grade_level]
+                        .filter(Boolean)
+                        .join(' · ') || '—'}
+                    </p>
+                    <p className="muted">
+                      {stats && stats.total > 0
+                        ? `Present ${stats.present} · Absent ${stats.absent} · Late ${stats.late}`
+                        : 'No attendance recorded yet'}
+                    </p>
+                  </div>
+                  <span className="muted">
+                    Joined {new Date(e.joined_at).toLocaleDateString()}
+                  </span>
+                </li>
+              )
+            })}
           </ul>
         )}
       </section>

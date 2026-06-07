@@ -1,12 +1,19 @@
 import { useEffect, useState } from 'react'
-import { Link, useParams } from 'react-router-dom'
-import { getRoster, listMyClasses, removeStudent } from '../lib/db'
+import { Link, useNavigate, useParams } from 'react-router-dom'
+import {
+  getAttendanceSummary,
+  getRoster,
+  listMyClasses,
+  removeStudent,
+} from '../lib/db'
 
 export default function ClassRoster() {
   const { classId } = useParams()
+  const navigate = useNavigate()
 
   const [cls, setCls] = useState(null)
   const [roster, setRoster] = useState([])
+  const [summary, setSummary] = useState({})
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
   const [removingId, setRemovingId] = useState(null)
@@ -14,12 +21,14 @@ export default function ClassRoster() {
   async function refresh() {
     try {
       // listMyClasses is RLS-scoped to this teacher; find the one we're viewing.
-      const [classes, students] = await Promise.all([
+      const [classes, students, attendance] = await Promise.all([
         listMyClasses(),
         getRoster(classId),
+        getAttendanceSummary(classId),
       ])
       setCls(classes.find((c) => c.id === classId) ?? null)
       setRoster(students)
+      setSummary(attendance)
       setError(null)
     } catch (err) {
       setError(err.message)
@@ -72,6 +81,15 @@ export default function ClassRoster() {
             </div>
           </header>
 
+          <p>
+            <button
+              type="button"
+              onClick={() => navigate(`/class/${classId}/attendance`)}
+            >
+              Take attendance
+            </button>
+          </p>
+
           <section className="panel">
             <h2>Students ({roster.length})</h2>
             {roster.length === 0 && (
@@ -79,26 +97,36 @@ export default function ClassRoster() {
             )}
             {roster.length > 0 && (
               <ul className="list">
-                {roster.map((r) => (
-                  <li key={r.id} className="list-item">
-                    <div>
-                      <span className="item-title">
-                        {r.student?.full_name ?? 'Unknown'}
-                      </span>
-                      <p className="muted">
-                        Joined {new Date(r.joined_at).toLocaleDateString()}
-                      </p>
-                    </div>
-                    <button
-                      type="button"
-                      className="ghost danger"
-                      onClick={() => handleRemove(r.id)}
-                      disabled={removingId === r.id}
-                    >
-                      {removingId === r.id ? 'Removing…' : 'Remove'}
-                    </button>
-                  </li>
-                ))}
+                {roster.map((r) => {
+                  const stats = r.student?.id ? summary[r.student.id] : null
+                  return (
+                    <li key={r.id} className="list-item">
+                      <div>
+                        <span className="item-title">
+                          {r.student?.full_name ?? 'Unknown'}
+                        </span>
+                        <p className="muted">
+                          Joined {new Date(r.joined_at).toLocaleDateString()}
+                        </p>
+                      </div>
+                      <div className="row-actions">
+                        <span className="muted">
+                          {stats && stats.total > 0
+                            ? `${Math.round(stats.rate * 100)}% attendance`
+                            : 'No attendance yet'}
+                        </span>
+                        <button
+                          type="button"
+                          className="ghost danger"
+                          onClick={() => handleRemove(r.id)}
+                          disabled={removingId === r.id}
+                        >
+                          {removingId === r.id ? 'Removing…' : 'Remove'}
+                        </button>
+                      </div>
+                    </li>
+                  )
+                })}
               </ul>
             )}
           </section>

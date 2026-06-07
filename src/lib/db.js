@@ -71,3 +71,104 @@ export async function listMyEnrollments() {
   if (error) throw error
   return data
 }
+
+// ---- Attendance ----
+
+const ATTENDANCE_STATUSES = ['present', 'absent', 'late', 'excused']
+
+// Teacher: ensure a session exists for (class, date), recording who took it.
+export async function getOrCreateSession(classId, dateStr) {
+  const {
+    data: { user },
+  } = await supabase.auth.getUser()
+  if (!user) throw new Error('Not signed in')
+
+  const { data, error } = await supabase
+    .from('attendance_sessions')
+    .upsert(
+      { class_id: classId, session_date: dateStr, taken_by: user.id },
+      { onConflict: 'class_id,session_date' },
+    )
+    .select()
+    .single()
+  if (error) throw error
+  return data
+}
+
+// Find the session for a class+date and its records. Returns
+// { session, records } or { session: null, records: [] } if none exists yet.
+export async function getAttendanceForDate(classId, dateStr) {
+  const { data: session, error: sessionError } = await supabase
+    .from('attendance_sessions')
+    .select('id, class_id, session_date, note')
+    .eq('class_id', classId)
+    .eq('session_date', dateStr)
+    .maybeSingle()
+  if (sessionError) throw sessionError
+  if (!session) return { session: null, records: [] }
+
+  const { data: records, error: recordsError } = await supabase
+    .from('attendance_records')
+    .select('student_id, status')
+    .eq('session_id', session.id)
+  if (recordsError) throw recordsError
+  return { session, records }
+}
+
+// Teacher: upsert attendance for a session. marks = [{ studentId, status }].
+export async function saveAttendance(sessionId, marks) {
+  const rows = marks.map((m) => ({
+    session_id: sessionId,
+    student_id: m.studentId,
+    status: m.status,
+  }))
+  const { error } = await supabase
+    .from('attendance_records')
+    .upsert(rows, { onConflict: 'session_id,student_id' })
+  if (error) throw error
+}
+
+// Per-student attendance totals + rate for a class, aggregated in JS.
+// Returns an object keyed by student_id:
+//   { [studentId]: { present, absent, late, excused, total, rate } }
+// Attendance rate counts present + late as attended.
+// (For a student, RLS limits this to their own records.)
+export async function getAttendanceSummary(classId) {
+  const { data: sessions, error: sessionError } = await supabase
+    .from('attendance_sessions')
+    .select('id')
+    .eq('class_id', classId)
+  if (sessionError) throw sessionError
+
+  const sessionIds = sessions.map((s) => s.id)
+  let records = []
+  if (sessionIds.length > 0) {
+    const { data, error: recordsError } = await supabase
+      .from('attendance_records')
+      .select('student_id, status')
+      .in('session_id', sessionIds)
+    if (recordsError) throw recordsError
+    records = data
+  }
+
+  const summary = {}
+  for (const rec of records) {
+    if (!summary[rec.student_id]) {
+      summary[rec.student_id] = {
+        present: 0,
+        absent: 0,
+        late: 0,
+        excused: 0,
+        total: 0,
+        rate: 0,
+      }
+    }
+    const s = summary[rec.student_id]
+    if (ATTENDANCE_STATUSES.includes(rec.status)) s[rec.status] += 1
+    s.total += 1
+  }
+  for (const s of Object.values(summary)) {
+    s.rate = s.total > 0 ? (s.present + s.late) / s.total : 0
+  }
+  return summary
+}

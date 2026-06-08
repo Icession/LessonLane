@@ -130,7 +130,8 @@ code {
 input[type='text'],
 input[type='email'],
 input[type='password'],
-input[type='number'] {
+input[type='number'],
+textarea {
   font: inherit;
   padding: 0.5rem 0.65rem;
   border: 1px solid var(--border);
@@ -138,7 +139,12 @@ input[type='number'] {
   background: var(--bg);
 }
 
-input:focus {
+textarea {
+  resize: vertical;
+}
+
+input:focus,
+textarea:focus {
   outline: 2px solid var(--accent);
   outline-offset: -1px;
   border-color: var(--accent);
@@ -306,6 +312,11 @@ a.item-title:hover {
 .success {
   color: #15803d;
   font-size: 0.9rem;
+}
+
+.digest-text {
+  white-space: pre-wrap;
+  line-height: 1.6;
 }
 
 /* Quizzes */

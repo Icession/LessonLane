@@ -3,12 +3,18 @@ import { Link, useNavigate, useParams } from 'react-router-dom'
 import {
   getAttendanceSummary,
   getRoster,
+  listClassHomework,
   listClassQuizzes,
   listMyClasses,
   publishQuiz,
   removeStudent,
   unpublishQuiz,
 } from '../lib/db'
+
+function formatDue(dateStr) {
+  if (!dateStr) return 'No due date'
+  return `Due ${new Date(`${dateStr}T00:00:00`).toLocaleDateString()}`
+}
 
 export default function ClassRoster() {
   const { classId } = useParams()
@@ -18,6 +24,7 @@ export default function ClassRoster() {
   const [roster, setRoster] = useState([])
   const [summary, setSummary] = useState({})
   const [quizzes, setQuizzes] = useState([])
+  const [homework, setHomework] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
   const [removingId, setRemovingId] = useState(null)
@@ -25,16 +32,19 @@ export default function ClassRoster() {
   async function refresh() {
     try {
       // listMyClasses is RLS-scoped to this teacher; find the one we're viewing.
-      const [classes, students, attendance, classQuizzes] = await Promise.all([
-        listMyClasses(),
-        getRoster(classId),
-        getAttendanceSummary(classId),
-        listClassQuizzes(classId),
-      ])
+      const [classes, students, attendance, classQuizzes, classHomework] =
+        await Promise.all([
+          listMyClasses(),
+          getRoster(classId),
+          getAttendanceSummary(classId),
+          listClassQuizzes(classId),
+          listClassHomework(classId),
+        ])
       setCls(classes.find((c) => c.id === classId) ?? null)
       setRoster(students)
       setSummary(attendance)
       setQuizzes(classQuizzes)
+      setHomework(classHomework)
       setError(null)
     } catch (err) {
       setError(err.message)
@@ -137,6 +147,17 @@ export default function ClassRoster() {
                         </span>
                         <button
                           type="button"
+                          className="ghost"
+                          onClick={() =>
+                            navigate(
+                              `/teacher/class/${classId}/digest/${r.student.id}`,
+                            )
+                          }
+                        >
+                          Digest
+                        </button>
+                        <button
+                          type="button"
                           className="ghost danger"
                           onClick={() => handleRemove(r.id)}
                           disabled={removingId === r.id}
@@ -208,6 +229,61 @@ export default function ClassRoster() {
                         onClick={() => navigate(`/quiz/${q.id}/results`)}
                       >
                         View results
+                      </button>
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </section>
+
+          <section className="panel">
+            <div
+              className="quiz-section-head"
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                marginBottom: '1rem',
+              }}
+            >
+              <h2 style={{ margin: 0, lineHeight: 1 }}>Homework</h2>
+              <button
+                type="button"
+                style={{ margin: 0, alignSelf: 'center' }}
+                onClick={() => navigate(`/class/${classId}/homework/new`)}
+              >
+                New homework
+              </button>
+            </div>
+            {homework.length === 0 && (
+              <p className="muted">No homework yet.</p>
+            )}
+            {homework.length > 0 && (
+              <ul className="list">
+                {homework.map((h) => (
+                  <li key={h.id} className="list-item">
+                    <div>
+                      <span className="item-title">{h.title}</span>
+                      <p className="muted">
+                        {formatDue(h.dueDate)} · {h.submissionCount} submission
+                        {h.submissionCount === 1 ? '' : 's'}
+                      </p>
+                    </div>
+                    <div className="row-actions">
+                      <button
+                        type="button"
+                        className="ghost"
+                        onClick={() => navigate(`/homework/${h.id}/edit`)}
+                      >
+                        Edit
+                      </button>
+                      <button
+                        type="button"
+                        className="ghost"
+                        onClick={() => navigate(`/homework/${h.id}/submissions`)}
+                      >
+                        View submissions
                       </button>
                     </div>
                   </li>

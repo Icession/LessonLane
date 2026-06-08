@@ -469,3 +469,249 @@ export async function getItemAnalysis(quizId) {
 
   return { totalAttempts: attemptCount ?? 0, questions: shaped }
 }
+
+// ---- Homework (teacher) ----
+
+// Create a homework assignment for a class. dueDate may be null.
+export async function createHomework({ classId, title, instructions, dueDate }) {
+  const {
+    data: { user },
+  } = await supabase.auth.getUser()
+  if (!user) throw new Error('Not signed in')
+
+  const { data, error } = await supabase
+    .from('homework')
+    .insert({
+      class_id: classId,
+      created_by: user.id,
+      title,
+      instructions: instructions || null,
+      due_date: dueDate || null,
+    })
+    .select()
+    .single()
+  if (error) throw error
+  return data
+}
+
+export async function updateHomework(homeworkId, { title, instructions, dueDate }) {
+  const { data, error } = await supabase
+    .from('homework')
+    .update({
+      title,
+      instructions: instructions || null,
+      due_date: dueDate || null,
+    })
+    .eq('id', homeworkId)
+    .select()
+    .single()
+  if (error) throw error
+  return data
+}
+
+export async function deleteHomework(homeworkId) {
+  const { error } = await supabase
+    .from('homework')
+    .delete()
+    .eq('id', homeworkId)
+  if (error) throw error
+}
+
+// One homework assignment (includes class_id). Readable by the owning teacher
+// and by students enrolled in its class.
+export async function getHomework(homeworkId) {
+  const { data, error } = await supabase
+    .from('homework')
+    .select('id, class_id, title, instructions, due_date, created_at')
+    .eq('id', homeworkId)
+    .single()
+  if (error) throw error
+  return data
+}
+
+// A class's homework with a submission count (teacher view).
+export async function listClassHomework(classId) {
+  const { data, error } = await supabase
+    .from('homework')
+    .select('id, title, instructions, due_date, created_at, homework_submissions(count)')
+    .eq('class_id', classId)
+    .order('created_at', { ascending: false })
+  if (error) throw error
+  return data.map((h) => ({
+    id: h.id,
+    title: h.title,
+    instructions: h.instructions,
+    dueDate: h.due_date,
+    submissionCount: h.homework_submissions?.[0]?.count ?? 0,
+  }))
+}
+
+// Submissions for one assignment, with each student's name (teacher view).
+export async function getHomeworkSubmissions(homeworkId) {
+  const { data, error } = await supabase
+    .from('homework_submissions')
+    .select('id, response, submitted_at, student:profiles(id, full_name)')
+    .eq('homework_id', homeworkId)
+  if (error) throw error
+  return data
+}
+
+// ---- Homework (student) ----
+
+// A class's homework, each flagged with whether I've turned it in.
+export async function listClassHomeworkForStudent(classId) {
+  const {
+    data: { user },
+  } = await supabase.auth.getUser()
+  if (!user) throw new Error('Not signed in')
+
+  const { data: homework, error } = await supabase
+    .from('homework')
+    .select('id, title, instructions, due_date')
+    .eq('class_id', classId)
+    .order('created_at', { ascending: false })
+  if (error) throw error
+
+  const ids = homework.map((h) => h.id)
+  let submissions = []
+  if (ids.length > 0) {
+    const { data, error: submissionsError } = await supabase
+      .from('homework_submissions')
+      .select('homework_id, submitted_at')
+      .eq('student_id', user.id)
+      .in('homework_id', ids)
+    if (submissionsError) throw submissionsError
+    submissions = data
+  }
+
+  const byHomework = {}
+  for (const s of submissions) byHomework[s.homework_id] = s
+  return homework.map((h) => ({
+    id: h.id,
+    title: h.title,
+    dueDate: h.due_date,
+    submitted: Boolean(byHomework[h.id]),
+    submittedAt: byHomework[h.id]?.submitted_at ?? null,
+  }))
+}
+
+// The current student's own submission for an assignment, or null.
+export async function getMyHomeworkSubmission(homeworkId) {
+  const {
+    data: { user },
+  } = await supabase.auth.getUser()
+  if (!user) throw new Error('Not signed in')
+
+  const { data, error } = await supabase
+    .from('homework_submissions')
+    .select('id, response, submitted_at, updated_at')
+    .eq('homework_id', homeworkId)
+    .eq('student_id', user.id)
+    .maybeSingle()
+  if (error) throw error
+  return data
+}
+
+// Turn in (or re-submit) homework. Upserts the student's own submission;
+// submitted_at is preserved across edits (the trigger bumps updated_at).
+export async function submitHomework(homeworkId, response) {
+  const {
+    data: { user },
+  } = await supabase.auth.getUser()
+  if (!user) throw new Error('Not signed in')
+
+  const { data, error } = await supabase
+    .from('homework_submissions')
+    .upsert(
+      { homework_id: homeworkId, student_id: user.id, response: response || null },
+      { onConflict: 'homework_id,student_id' },
+    )
+    .select()
+    .single()
+  if (error) throw error
+  return data
+}
+
+// Gather one student's stats for a parent digest. Teacher-only; relies on the
+// RLS the teacher already has over their class's attendance, quizzes, homework.
+export async function getStudentSummary(classId, studentId) {
+  const [{ data: student, error: sErr }, { data: cls, error: cErr }] =
+    await Promise.all([
+      supabase.from('profiles').select('full_name').eq('id', studentId).single(),
+      supabase.from('classes').select('name').eq('id', classId).single(),
+    ])
+  if (sErr) throw sErr
+  if (cErr) throw cErr
+
+  // Attendance: reuse the roster's summary so the % is identical.
+  const attendanceSummary = await getAttendanceSummary(classId)
+  const a = attendanceSummary?.[studentId] ?? {}
+  const attTotal = a.total ?? 0
+  const attRate = a.rate ?? 0
+  const attendance = {
+    present: a.present ?? Math.round(attRate * attTotal),
+    total: attTotal,
+    rate: attRate,
+  }
+
+  // Quizzes the student has submitted, scored out of the question count.
+  const { data: quizRows, error: qErr } = await supabase
+    .from('quizzes')
+    .select('id, title, quiz_questions(count)')
+    .eq('class_id', classId)
+  if (qErr) throw qErr
+  const quizIds = (quizRows ?? []).map((q) => q.id)
+  let quizzes = []
+  if (quizIds.length > 0) {
+    const { data: attempts, error: aErr } = await supabase
+      .from('quiz_attempts')
+      .select('quiz_id, score')
+      .eq('student_id', studentId)
+      .in('quiz_id', quizIds)
+      .not('submitted_at', 'is', null)
+    if (aErr) throw aErr
+    const scoreByQuiz = {}
+    for (const at of attempts ?? []) scoreByQuiz[at.quiz_id] = at.score
+    quizzes = (quizRows ?? [])
+      .filter((q) => Object.prototype.hasOwnProperty.call(scoreByQuiz, q.id))
+      .map((q) => ({
+        title: q.title,
+        score: scoreByQuiz[q.id],
+        total: q.quiz_questions?.[0]?.count ?? 0,
+      }))
+  }
+
+  // Homework completion.
+  const { data: hw, error: hErr } = await supabase
+    .from('homework')
+    .select('id')
+    .eq('class_id', classId)
+  if (hErr) throw hErr
+  const hwIds = (hw ?? []).map((h) => h.id)
+  let submitted = 0
+  if (hwIds.length > 0) {
+    const { count, error: subErr } = await supabase
+      .from('homework_submissions')
+      .select('id', { count: 'exact', head: true })
+      .eq('student_id', studentId)
+      .in('homework_id', hwIds)
+    if (subErr) throw subErr
+    submitted = count ?? 0
+  }
+  const homework = { submitted, total: hwIds.length }
+
+  return {
+    studentName: student?.full_name ?? 'Student',
+    className: cls?.name ?? '',
+    stats: { attendance, quizzes, homework },
+  }
+}
+
+// Ask the generate-digest Edge Function for a draft from those stats.
+export async function generateDigest({ studentName, className, stats }) {
+  const { data, error } = await supabase.functions.invoke('generate-digest', {
+    body: { studentName, className, stats },
+  })
+  if (error) throw error
+  return data.digest
+}

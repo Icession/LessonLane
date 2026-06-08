@@ -5,6 +5,7 @@ import {
   getAttendanceSummary,
   joinClassByCode,
   listAvailableQuizzes,
+  listClassHomeworkForStudent,
   listMyEnrollments,
 } from '../lib/db'
 
@@ -15,6 +16,7 @@ export default function StudentHome() {
   const [enrollments, setEnrollments] = useState([])
   const [summaries, setSummaries] = useState({}) // classId -> my summary
   const [quizzes, setQuizzes] = useState({}) // classId -> available quizzes
+  const [homework, setHomework] = useState({}) // classId -> my homework
   const [loading, setLoading] = useState(true)
   const [loadError, setLoadError] = useState(null)
 
@@ -45,6 +47,14 @@ export default function StudentHome() {
         }),
       )
       setQuizzes(Object.fromEntries(quizEntries))
+
+      const homeworkEntries = await Promise.all(
+        withClass.map(async (e) => {
+          const assignments = await listClassHomeworkForStudent(e.class.id)
+          return [e.class.id, assignments]
+        }),
+      )
+      setHomework(Object.fromEntries(homeworkEntries))
       setLoadError(null)
     } catch (err) {
       setLoadError(err.message)
@@ -134,6 +144,9 @@ export default function StudentHome() {
             {enrollments.map((e) => {
               const stats = e.class?.id ? summaries[e.class.id] : null
               const classQuizzes = e.class?.id ? quizzes[e.class.id] ?? [] : []
+              const classHomework = e.class?.id
+                ? homework[e.class.id] ?? []
+                : []
               return (
                 <li key={e.id} className="class-card">
                   <div className="class-card-head">
@@ -178,6 +191,34 @@ export default function StudentHome() {
                                 Take
                               </button>
                             )}
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                  </div>
+
+                  <div className="quiz-block">
+                    <span className="muted">Homework</span>
+                    {classHomework.length === 0 && (
+                      <p className="muted">No homework assigned yet.</p>
+                    )}
+                    {classHomework.length > 0 && (
+                      <ul className="list">
+                        {classHomework.map((h) => (
+                          <li key={h.id} className="list-item">
+                            <span className="item-title">{h.title}</span>
+                            <div className="row-actions">
+                              {h.submitted && (
+                                <span className="muted">Turned in</span>
+                              )}
+                              <button
+                                type="button"
+                                className="ghost"
+                                onClick={() => navigate(`/homework/${h.id}`)}
+                              >
+                                {h.submitted ? 'View' : 'Open'}
+                              </button>
+                            </div>
                           </li>
                         ))}
                       </ul>

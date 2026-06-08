@@ -9,6 +9,10 @@ import Attendance from './pages/Attendance'
 import QuizEditor from './pages/QuizEditor'
 import QuizResults from './pages/QuizResults'
 import QuizTake from './pages/QuizTake'
+import HomeworkEditor from './pages/HomeworkEditor'
+import HomeworkSubmissions from './pages/HomeworkSubmissions'
+import HomeworkDo from './pages/HomeworkDo'
+import ParentDigest from './pages/ParentDigest'
 import StudentHome from './pages/StudentHome'
 
 // Index route: send a logged-in user to their role's home, else to sign in.
@@ -76,6 +80,38 @@ export default function App() {
         }
       />
       <Route
+        path="/teacher/class/:classId/digest/:studentId"
+        element={
+          <RequireAuth role="teacher">
+            <ParentDigest />
+          </RequireAuth>
+        }
+      />
+      <Route
+        path="/class/:classId/homework/new"
+        element={
+          <RequireAuth role="teacher">
+            <HomeworkEditor />
+          </RequireAuth>
+        }
+      />
+      <Route
+        path="/homework/:homeworkId/edit"
+        element={
+          <RequireAuth role="teacher">
+            <HomeworkEditor />
+          </RequireAuth>
+        }
+      />
+      <Route
+        path="/homework/:homeworkId/submissions"
+        element={
+          <RequireAuth role="teacher">
+            <HomeworkSubmissions />
+          </RequireAuth>
+        }
+      />
+      <Route
         path="/student"
         element={
           <RequireAuth role="student">
@@ -88,6 +124,14 @@ export default function App() {
         element={
           <RequireAuth role="student">
             <QuizTake />
+          </RequireAuth>
+        }
+      />
+      <Route
+        path="/homework/:homeworkId"
+        element={
+          <RequireAuth role="student">
+            <HomeworkDo />
           </RequireAuth>
         }
       />

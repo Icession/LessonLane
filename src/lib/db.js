@@ -396,3 +396,76 @@ export async function getMyQuizResult(quizId) {
   if (answersError) throw answersError
   return { attempt, answers }
 }
+
+// ---- AI quiz generation ----
+
+// Call the "generate-quiz" Edge Function. Returns an array of
+// { prompt, explanation, options: [{ text, isCorrect }] }.
+export async function generateQuizQuestions({
+  topic,
+  numQuestions = 5,
+  gradeLevel = '',
+}) {
+  const { data, error } = await supabase.functions.invoke('generate-quiz', {
+    body: { topic, numQuestions, gradeLevel },
+  })
+  if (error) throw error
+  if (data?.error) throw new Error(data.error)
+  return data.questions
+}
+
+export async function getItemAnalysis(quizId) {
+  // 1) Questions + their options, in order.
+  const { data: questions, error: qErr } = await supabase
+    .from('quiz_questions')
+    .select('id, position, prompt, explanation, quiz_options(id, position, text, is_correct)')
+    .eq('quiz_id', quizId)
+    .order('position')
+  if (qErr) throw qErr
+
+  // 2) Count submitted attempts.
+  const { count: attemptCount, error: aErr } = await supabase
+    .from('quiz_attempts')
+    .select('id', { count: 'exact', head: true })
+    .eq('quiz_id', quizId)
+    .not('submitted_at', 'is', null)
+  if (aErr) throw aErr
+
+  const questionIds = (questions ?? []).map((q) => q.id)
+  if (questionIds.length === 0) {
+    return { totalAttempts: attemptCount ?? 0, questions: [] }
+  }
+
+  // 3) All answers for these questions. (quiz_answers has no quiz_id column,
+  //    so we fetch by question_id IN the quiz's question ids.)
+  const { data: answers, error: ansErr } = await supabase
+    .from('quiz_answers')
+    .select('question_id, selected_option_id, is_correct')
+    .in('question_id', questionIds)
+  if (ansErr) throw ansErr
+
+  // 4) Aggregate in JS.
+  const byQuestion = {}
+  for (const a of answers ?? []) {
+    const b = (byQuestion[a.question_id] ??= { answered: 0, correct: 0, byOption: {} })
+    b.answered += 1
+    if (a.is_correct) b.correct += 1
+    if (a.selected_option_id) {
+      b.byOption[a.selected_option_id] = (b.byOption[a.selected_option_id] ?? 0) + 1
+    }
+  }
+
+  const shaped = (questions ?? []).map((q) => {
+    const agg = byQuestion[q.id] ?? { answered: 0, correct: 0, byOption: {} }
+    const options = (q.quiz_options ?? [])
+      .slice()
+      .sort((a, b) => a.position - b.position)
+      .map((o) => ({ id: o.id, text: o.text, isCorrect: o.is_correct, count: agg.byOption[o.id] ?? 0 }))
+    return {
+      id: q.id, position: q.position, prompt: q.prompt, explanation: q.explanation,
+      answered: agg.answered, correct: agg.correct, options,
+    }
+  })
+
+  return { totalAttempts: attemptCount ?? 0, questions: shaped }
+}

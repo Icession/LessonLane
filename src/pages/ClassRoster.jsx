@@ -152,10 +152,19 @@ export default function ClassRoster() {
           </section>
 
           <section className="panel">
-            <div className="question-head">
-              <h2>Quizzes</h2>
+            <div
+              className="quiz-section-head"
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                marginBottom: '1rem',
+              }}
+            >
+              <h2 style={{ margin: 0, lineHeight: 1 }}>Quizzes</h2>
               <button
                 type="button"
+                style={{ margin: 0, alignSelf: 'center' }}
                 onClick={() => navigate(`/class/${classId}/quizzes/new`)}
               >
                 New quiz

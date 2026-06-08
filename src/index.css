@@ -129,7 +129,8 @@ code {
 
 input[type='text'],
 input[type='email'],
-input[type='password'] {
+input[type='password'],
+input[type='number'] {
   font: inherit;
   padding: 0.5rem 0.65rem;
   border: 1px solid var(--border);
@@ -343,6 +344,23 @@ a.item-title:hover {
   align-items: center;
   justify-content: space-between;
   gap: 1rem;
+}
+
+/* Keep the title vertically centered against the action button. */
+.question-head h2 {
+  margin: 0;
+}
+
+/* Quizzes section header: title left, button centered on the same line. */
+.quiz-section-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.quiz-section-head h2 {
+  margin: 0;
+  line-height: 1;
 }
 
 .options-field {

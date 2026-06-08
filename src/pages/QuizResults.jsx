@@ -1,24 +1,27 @@
 import { useEffect, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
-import { getQuizForEditing, getQuizResults } from '../lib/db'
+import { getItemAnalysis, getQuizForEditing, getQuizResults } from '../lib/db'
 
 export default function QuizResults() {
   const { quizId } = useParams()
 
   const [quiz, setQuiz] = useState(null)
   const [attempts, setAttempts] = useState([])
+  const [analysis, setAnalysis] = useState(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
 
   useEffect(() => {
     void (async () => {
       try {
-        const [quizData, results] = await Promise.all([
+        const [quizData, results, itemAnalysis] = await Promise.all([
           getQuizForEditing(quizId),
           getQuizResults(quizId),
+          getItemAnalysis(quizId),
         ])
         setQuiz(quizData)
         setAttempts(results)
+        setAnalysis(itemAnalysis)
         setError(null)
       } catch (err) {
         setError(err.message)
@@ -83,6 +86,122 @@ export default function QuizResults() {
                 ))}
               </ul>
             )}
+          </section>
+
+          <section className="panel">
+            <h2>Item analysis</h2>
+
+            {(!analysis || analysis.totalAttempts === 0) && (
+              <p className="muted">
+                No attempts yet — item analysis appears once students submit.
+              </p>
+            )}
+
+            {analysis &&
+              analysis.totalAttempts > 0 &&
+              analysis.questions.map((q, qi) => {
+                const pct =
+                  q.answered > 0 ? Math.round((q.correct / q.answered) * 100) : 0
+                const barColor =
+                  pct >= 80 ? '#16a34a' : pct >= 50 ? '#d97706' : '#dc2626'
+
+                // The wrong option the most students picked — a shared misconception.
+                let topWrongId = null
+                let topWrongCount = 0
+                for (const o of q.options) {
+                  if (!o.isCorrect && o.count > topWrongCount) {
+                    topWrongCount = o.count
+                    topWrongId = o.id
+                  }
+                }
+
+                return (
+                  <div key={q.id} style={{ marginBottom: '1.75rem' }}>
+                    <p className="item-title" style={{ margin: '0 0 0.25rem' }}>
+                      Q{qi + 1} · {q.prompt}
+                    </p>
+                    <p className="muted" style={{ margin: '0 0 0.5rem' }}>
+                      {q.correct} of {q.answered} correct · {pct}%
+                    </p>
+
+                    {/* difficulty bar */}
+                    <div
+                      style={{
+                        background: '#e5e7eb',
+                        borderRadius: 999,
+                        height: 8,
+                        overflow: 'hidden',
+                        marginBottom: '0.85rem',
+                      }}
+                    >
+                      <div
+                        style={{
+                          width: `${pct}%`,
+                          background: barColor,
+                          height: '100%',
+                        }}
+                      />
+                    </div>
+
+                    {/* per-option breakdown */}
+                    {q.options.map((o) => {
+                      const optPct =
+                        q.answered > 0
+                          ? Math.round((o.count / q.answered) * 100)
+                          : 0
+                      return (
+                        <div key={o.id} style={{ marginBottom: '0.55rem' }}>
+                          <div
+                            style={{
+                              display: 'flex',
+                              justifyContent: 'space-between',
+                              alignItems: 'baseline',
+                              gap: '0.75rem',
+                            }}
+                          >
+                            <span>
+                              {o.isCorrect && (
+                                <span style={{ color: '#16a34a', fontWeight: 600 }}>
+                                  ✓{' '}
+                                </span>
+                              )}
+                              {o.text}
+                              {o.id === topWrongId && (
+                                <span
+                                  className="muted"
+                                  style={{ marginLeft: '0.4rem', fontSize: '0.85em' }}
+                                >
+                                  · most common wrong answer
+                                </span>
+                              )}
+                            </span>
+                            <span className="muted" style={{ whiteSpace: 'nowrap' }}>
+                              {o.count} picked
+                            </span>
+                          </div>
+                          <div
+                            style={{
+                              background: '#eef0f2',
+                              borderRadius: 999,
+                              height: 6,
+                              overflow: 'hidden',
+                              marginTop: '0.3rem',
+                            }}
+                          >
+                            <div
+                              style={{
+                                width: `${optPct}%`,
+                                background: o.isCorrect ? '#86efac' : '#cbd5e1',
+                                height: '100%',
+                              }}
+                            />
+                          </div>
+                        </div>
+                      )
+                    })}
+                  </div>
+                )
+              })}
           </section>
         </>
       )}

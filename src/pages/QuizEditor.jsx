@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import {
   createQuiz,
+  generateQuizQuestions,
   getQuizForEditing,
   publishQuiz,
   saveQuizQuestions,
@@ -55,6 +56,11 @@ export default function QuizEditor() {
   const [error, setError] = useState(null)
   const [saving, setSaving] = useState(false)
   const [savedMsg, setSavedMsg] = useState(null)
+
+  // AI generation panel.
+  const [genTopic, setGenTopic] = useState('')
+  const [genCount, setGenCount] = useState(5)
+  const [generating, setGenerating] = useState(false)
 
   // Stable keys for question rows so inputs keep focus across edits.
   const keyCounter = useRef(0)
@@ -167,6 +173,40 @@ export default function QuizEditor() {
     setSavedMsg(null)
   }
 
+  async function handleGenerate() {
+    if (!genTopic.trim()) {
+      setError('Enter a topic to generate questions.')
+      return
+    }
+    setGenerating(true)
+    setError(null)
+    setSavedMsg(null)
+    try {
+      const generated = await generateQuizQuestions({
+        topic: genTopic,
+        numQuestions: genCount,
+      })
+      // Normalize into the editor's question shape, carrying isCorrect through.
+      const next = (generated ?? []).map((q) => ({
+        prompt: q.prompt ?? '',
+        explanation: q.explanation ?? '',
+        options: (q.options ?? []).map((o) => ({
+          text: o.text ?? '',
+          isCorrect: Boolean(o.isCorrect),
+        })),
+      }))
+      setQuestions(next)
+      setKeys(freshKeys(next.length))
+      // Default the title/topic from the prompt topic if still empty.
+      if (!topic.trim()) setTopic(genTopic)
+      if (!title.trim()) setTitle(genTopic)
+    } catch (err) {
+      setError(err.message)
+    } finally {
+      setGenerating(false)
+    }
+  }
+
   async function handleSave() {
     const validationError = validate(title, questions)
     if (validationError) {
@@ -246,6 +286,46 @@ export default function QuizEditor() {
           This quiz is published and read-only. Unpublish it to edit questions
           (re-saving recreates questions and would clear submitted answers).
         </p>
+      )}
+
+      {!readOnly && (
+        <section className="panel">
+          <h2>Generate with AI</h2>
+          <p className="muted">
+            Generate draft questions to review and edit before saving.
+          </p>
+          <div className="form form-row">
+            <label>
+              Topic
+              <input
+                type="text"
+                value={genTopic}
+                onChange={(e) => setGenTopic(e.target.value)}
+                placeholder="e.g. Photosynthesis"
+                disabled={generating}
+              />
+            </label>
+            <label>
+              Questions
+              <input
+                type="number"
+                min={1}
+                max={20}
+                value={genCount}
+                onChange={(e) => setGenCount(Number(e.target.value))}
+                disabled={generating}
+              />
+            </label>
+            <button type="button" onClick={handleGenerate} disabled={generating}>
+              {generating ? 'Generating…' : 'Generate'}
+            </button>
+          </div>
+          {questions.length > 0 && !generating && (
+            <p className="muted">
+              Generating replaces the questions below.
+            </p>
+          )}
+        </section>
       )}
 
       <section className="panel">

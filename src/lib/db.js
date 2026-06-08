@@ -715,3 +715,56 @@ export async function generateDigest({ studentName, className, stats }) {
   if (error) throw error
   return data.digest
 }
+
+// Aggregate a class's weakest quiz areas for the lesson planner.
+// Reuses listClassQuizzes + getItemAnalysis (both teacher-readable).
+export async function getClassWeakAreas(classId) {
+  const { data: cls, error: cErr } = await supabase
+    .from('classes')
+    .select('name, grade_level')
+    .eq('id', classId)
+    .single()
+  if (cErr) throw cErr
+
+  const quizzes = await listClassQuizzes(classId)
+  const perQuiz = []
+  const weakQuestions = []
+
+  for (const q of quizzes) {
+    const ia = await getItemAnalysis(q.id)
+    if (!ia || ia.totalAttempts === 0) continue
+    let totalCorrect = 0
+    let totalAnswered = 0
+    for (const question of ia.questions) {
+      totalCorrect += question.correct
+      totalAnswered += question.answered
+      const pct =
+        question.answered > 0
+          ? Math.round((question.correct / question.answered) * 100)
+          : 0
+      weakQuestions.push({ quizTitle: q.title, prompt: question.prompt, correctPct: pct })
+    }
+    const avgPct =
+      totalAnswered > 0 ? Math.round((totalCorrect / totalAnswered) * 100) : 0
+    perQuiz.push({ title: q.title, avgPct })
+  }
+
+  // Weakest questions first; keep the bottom 8.
+  weakQuestions.sort((a, b) => a.correctPct - b.correctPct)
+
+  return {
+    className: cls?.name ?? '',
+    gradeLevel: cls?.grade_level ?? '',
+    quizzes: perQuiz,
+    weakQuestions: weakQuestions.slice(0, 8),
+  }
+}
+
+// Ask the generate-lesson Edge Function for a plan targeting those weak areas.
+export async function generateLesson({ className, gradeLevel, focusTopic, weakQuestions }) {
+  const { data, error } = await supabase.functions.invoke('generate-lesson', {
+    body: { className, gradeLevel, focusTopic, weakQuestions },
+  })
+  if (error) throw error
+  return data.lesson
+}

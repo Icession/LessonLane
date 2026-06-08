@@ -13,6 +13,7 @@ import HomeworkEditor from './pages/HomeworkEditor'
 import HomeworkSubmissions from './pages/HomeworkSubmissions'
 import HomeworkDo from './pages/HomeworkDo'
 import ParentDigest from './pages/ParentDigest'
+import LessonPlanner from './pages/LessonPlanner'
 import StudentHome from './pages/StudentHome'
 
 // Index route: send a logged-in user to their role's home, else to sign in.
@@ -84,6 +85,14 @@ export default function App() {
         element={
           <RequireAuth role="teacher">
             <ParentDigest />
+          </RequireAuth>
+        }
+      />
+      <Route
+        path="/teacher/class/:classId/lesson"
+        element={
+          <RequireAuth role="teacher">
+            <LessonPlanner />
           </RequireAuth>
         }
       />

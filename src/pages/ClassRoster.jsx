@@ -111,12 +111,18 @@ export default function ClassRoster() {
             </div>
           </header>
 
-          <p>
+          <p className="row-actions">
             <button
               type="button"
               onClick={() => navigate(`/class/${classId}/attendance`)}
             >
               Take attendance
+            </button>
+            <button
+              type="button"
+              onClick={() => navigate(`/teacher/class/${classId}/lesson`)}
+            >
+              Lesson planner
             </button>
           </p>
 
